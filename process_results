@@ -1,0 +1,152 @@
+#!/usr/bin/env node
+
+const { readFileSync, writeFileSync } = require('fs');
+
+// Tests to gather results for
+const tests = [`conversions`, `performance`];
+
+// Platforms to process from -p arguments
+const platforms = [];
+
+// Processed results to output
+const results = {};
+
+// Benchmarks run
+const benchmarks_run = {};
+
+// Output file
+let output_file = 'processed.csv';
+
+// Process the arguments
+const process_arguments = () => {
+  for (let i = 2; i < process.argv.length; i++) {
+    // If an argument is `-p` then expect the next argument to be a platform
+    if (process.argv[i] === '-p') {
+      if (i + 1 >= process.argv.length) {
+        console.error(`Error: must include a platform after -p flag`);
+        process.exit(1);
+      }
+
+      platforms.push(process.argv[i + 1]);
+      i++;
+    } else if (process.argv[i] === '-o') {
+      if (i + 1 >= process.argv.length) {
+        console.error(`Error: must include a output file after -o flag`);
+        process.exit(1);
+      }
+
+      output_file = process.argv[i + 1];
+      i++;
+    } else if (process.argc[i] === '-h') {
+      console.log(`Usage: process_results [-h] [-o output] -p platform ...
+    -h    - this help
+    -p    - platform to process results for (can be used more than once)
+    -o    - output file (default "processed.csv")
+`);
+      process.exit(0);
+    }
+  }
+};
+
+// Process a file and store the results
+const process_results = (platform, test, raw_output) => {
+  const lines = raw_output.split('\n');
+
+  // The current test we are looking for results for
+  let current_test = '';
+
+  for (let line of lines) {
+    line.trim();
+    let match = line.match('Benchmark:');
+
+    if (match) {
+      // The current benchmark should be at the match point plus the length of "Benchark:"
+      let current_benchmark = line.substring(match.index + 11);
+
+      if (current_test != '') {
+        console.error(
+          `Benchmark found where not expected: ${current_benchmark} for platform ${platform} and test ${test}`
+        );
+        process.exit(1);
+      }
+
+      current_test = current_benchmark;
+    } else {
+      match = line.match('Time:');
+
+      if (match) {
+        if (current_test == '') {
+          console.error(`Found a time before a benchmark: "${line}"`);
+          process.exit(1);
+        }
+
+        let time = line.substring(match.index + 6);
+        let parts = time.split(' ');
+        if (parts.length < 2) {
+          console.error(`Unexpected Time line encountered: "${line}"`);
+          process.exit(1);
+        }
+
+        results[platform][current_test] = Number(parts[0]);
+
+        benchmarks_run[current_test] = benchmarks_run[current_test]
+          ? benchmarks_run[current_test] + 1
+          : 1;
+
+        current_test = '';
+      }
+    }
+  }
+
+  if (current_test !== '') {
+    console.error(`Unexpected end of file after test ${current_test}`);
+    process.exit(1);
+  }
+};
+
+process_arguments();
+
+if (platforms.length === 0) {
+  console.error(`Error: must include at least one platform with the -p flag`);
+  process.exit(1);
+}
+
+for (let platform of platforms) {
+  results[platform] = {};
+
+  for (let test of tests) {
+    let file_contents;
+    try {
+      file_contents = readFileSync(`./output/${platform}/${test}.out`, 'utf-8');
+    } catch (err) {
+      console.error(
+        `Unable to read test output of ${test} for platform ${platform}`
+      );
+      process.exit(1);
+    }
+
+    process_results(platform, test, file_contents);
+  }
+}
+
+let output = 'benchmark, ' + platforms.join(', ') + '\n';
+for (let benchmark of Object.keys(benchmarks_run)) {
+  output += benchmark + ', ';
+  for (let i = 0; i < platforms.length; i++) {
+    let platform = platforms[i];
+    let time = results[platform][benchmark];
+
+    output += time;
+    if (i < platforms.length - 1) {
+      output += ', ';
+    }
+  }
+  output += '\n';
+}
+
+try {
+  writeFileSync(output_file, output, 'utf-8');
+} catch (err) {
+  console.error(`Unable to open "${output_file}" for writing: ${err}`);
+  process.exit(1);
+}

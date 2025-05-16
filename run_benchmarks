@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+platforms=( )
+tests=(conversions performance)
+
+while getopts 'hp:' opt; do
+  case "$opt" in
+    p)
+      platforms+=(${OPTARG})
+      ;;
+
+    ?|h)
+      echo "Usage: $(basename $0) [-p platform]"
+      exit 1
+      ;;
+  esac
+done
+shift "$(($OPTIND -1))"
+
+if ((${#platforms[@]} == 0)); then
+  echo "Usage: $(basename $0) [-p platform]"
+  exit 1
+fi
+
+echo "Creating \"benchmarks\" database"
+createdb benchmarks
+
+echo "Creating output directory"
+mkdir -p output
+
+echo "Running initial setup"
+psql -f sql/common/setup.sql benchmarks >/dev/null 2>&1
+
+for platform in "${!platforms[@]}"
+do
+  if [ ! -d "sql/${platforms[$platform]}" ]; then
+    echo "Platform ${platforms[$platform]} does not exist, skipping"
+  else
+    mkdir -p output/${platforms[$platform]}
+
+    # run the setup
+    echo "Setting up platform ${platforms[$platform]}"
+    psql -f sql/${platforms[$platform]}/setup.sql benchmarks >/dev/null 2>&1
+
+    # run all of the tests
+    for test in "${!tests[@]}"
+    do
+      echo "Executing benchmarks for ${tests[$test]}"
+      psql -c "\\timing on" -f sql/${platforms[$platform]}/${tests[$test]}.sql benchmarks  >output/${platforms[$platform]}/${tests[$test]}.out 2>&1
+    done
+  fi
+done
+
+echo "Dropping \"benchmarks\" database"
+dropdb benchmarks
