@@ -16,7 +16,7 @@ Additional languages and tests are welcome contributions.
 Benchmarks require a Linux, or Unix based environment (BSD, MacOS) in order to run:
 
 ```shell
-./run_benchmarks.sh -p pljs -p plv8
+./run_benchmarks -p pljs -p plv8
 ```
 
 This will execute benchmarks for both `pljs` and `plv8` and the output of the benchmarks will be sent to the `output` directory.
